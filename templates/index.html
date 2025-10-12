@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Davebot</title>
+<style>
+  body { font-family: Arial, sans-serif; display: flex; justify-content: center; padding-top: 50px; background: #f0f2f5; }
+  #chat { width: 400px; border: 1px solid #ccc; padding: 10px; border-radius: 8px; background: #fff; display: flex; flex-direction: column; }
+  #messages { flex: 1; height: 400px; overflow-y: auto; border-bottom: 1px solid #ccc; margin-bottom: 10px; padding: 5px; }
+  .user, .ai { padding: 8px 12px; border-radius: 16px; margin: 5px 0; max-width: 80%; word-wrap: break-word; }
+  .user { background-color: #d0e7ff; align-self: flex-end; text-align: right; }
+  .ai { background-color: #e2ffe2; align-self: flex-start; text-align: left; }
+  #inputContainer { display: flex; }
+  #messageInput { flex: 1; padding: 8px; border-radius: 16px; border: 1px solid #ccc; }
+  #sendBtn { padding: 8px 16px; margin-left: 5px; border: none; background: #4CAF50; color: #fff; border-radius: 16px; cursor: pointer; }
+  #sendBtn:hover { background: #45a049; }
+  .typing { font-style: italic; color: gray; }
+</style>
+</head>
+<body>
+<div id="chat">
+  <div id="messages"></div>
+  <div id="inputContainer">
+    <input id="messageInput" type="text" placeholder="Type your message">
+    <button id="sendBtn" onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script>
+async function sendMessage() {
+  const input = document.getElementById("messageInput");
+  const message = input.value.trim();
+  if (!message) return;
+
+  const messagesDiv = document.getElementById("messages");
+
+  // Show user message
+  const userDiv = document.createElement("div");
+  userDiv.className = "user";
+  userDiv.textContent = message;
+  messagesDiv.appendChild(userDiv);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+  input.value = "";
+
+  // Show typing animation
+  const typingDiv = document.createElement("div");
+  typingDiv.className = "ai typing";
+  typingDiv.textContent = "AI is typing...";
+  messagesDiv.appendChild(typingDiv);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+  // Call backend
+  const res = await fetch("/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message })
+  });
+  const data = await res.json();
+
+  // Remove typing animation
+  typingDiv.remove();
+
+  // Show AI response
+  const aiDiv = document.createElement("div");
+  aiDiv.className = "ai";
+  aiDiv.textContent = data.response;
+  messagesDiv.appendChild(aiDiv);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// Press Enter to send message
+document.getElementById("messageInput").addEventListener("keypress", function(e) {
+  if (e.key === "Enter") sendMessage();
+});
+</script>
+</body>
+</html>
