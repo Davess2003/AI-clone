@@ -1,0 +1,4 @@
+worker
+.env
+__pycache__/
+*.pyc
