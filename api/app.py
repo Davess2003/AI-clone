@@ -5,7 +5,7 @@ import requests
 app = Flask(__name__)
 
 # === CONFIGURATION ===
-APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbwla40vHmc7TIo7ILkL31r0o4syxY2PPv8YuGEl6pzwtFiW9WCF7DnlSJQrkRvXSYRj/exec"
+APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbydWRGRa6ClyWaZiCiseoAdFCaxobKVYDFTcEAh-eLhtbkXY-iTuGryUcgpwYSQHw2R/exec"
 
 # === ROUTES ===
 @app.route("/", methods=["GET"])
@@ -34,6 +34,7 @@ def form_page():
         <input type="text" name="fullname" placeholder="Full Name" required />
         <input type="email" name="email" placeholder="Email Address" required />
         <input type="text" name="passportId" placeholder="Passport ID" required />
+        <input type="number" name="numGuests" placeholder="Number of Guests" required min="1" />
 
         <label>Check-In Date</label>
         <input type="date" name="checkinDate" required />
@@ -103,6 +104,7 @@ def submit_form():
         fullname = data.get("fullname")
         email = data.get("email")
         passport_id = data.get("passportId")
+        num_guests = data.get("numGuests")
         checkin_date = data.get("checkinDate")
         checkout_date = data.get("checkoutDate") or ""
         image_data_url = data.get("image")
@@ -111,6 +113,7 @@ def submit_form():
             "fullname": fullname,
             "email": email,
             "passportId": passport_id,
+            "numGuests": num_guests,
             "checkinDate": checkin_date,
             "checkoutDate": checkout_date,
             "image": image_data_url
