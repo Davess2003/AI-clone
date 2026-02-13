@@ -10,7 +10,7 @@ APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbyA03PeYT-q-qnWw
 # === ROUTES ===
 @app.route("/", methods=["GET"])
 def form_page():
-    building = request.args.get("form", "Liv")  # Default to "Liv" if not provided
+    building = request.args.get("form", "Circle")  # Default to "Liv" if not provided
 
     return f"""
     <!DOCTYPE html>
