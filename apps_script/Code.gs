@@ -54,14 +54,38 @@ function doPost(e) {
     const doc = DocumentApp.openById(copy.getId());
     const body = doc.getBody();
 
-    body.replaceText("{FULLNAME}", fullname);
-    body.replaceText("{EMAIL}", email);
-    body.replaceText("{PASSPORT ID}", passportId);
-    body.replaceText("{PID}", pid);
-    body.replaceText("{FULL_ADDRESS}", fullAddress);
-    body.replaceText("{NUMBER OF GUESTS}", numGuests);
-    body.replaceText("{CHECKIN DATE}", checkinFormatted);
-    body.replaceText("{CHECKOUT DATE}", checkoutFormatted);
+    // Replace placeholders. Curly braces are escaped because replaceText() treats
+    // the search string as a regex. Each field covers both the spaced and the
+    // underscore naming style so it works regardless of how the doc is written.
+    function fill(value) {
+      const v = value == null ? "" : value.toString();
+      return function (placeholder) {
+        body.replaceText("\\{" + placeholder + "\\}", v);
+      };
+    }
+
+    fill(fullname)("FULLNAME");
+    fill(fullname)("GUEST_FULL_NAME");
+    fill(fullname)("FULL NAME");
+
+    fill(email)("EMAIL");
+
+    fill(passportId)("PASSPORT ID");
+    fill(passportId)("PASSPORT_ID");
+
+    fill(pid)("PID");
+
+    fill(fullAddress)("FULL_ADDRESS");
+    fill(fullAddress)("FULL ADDRESS");
+
+    fill(numGuests)("NUMBER OF GUESTS");
+    fill(numGuests)("NUMBER_OF_GUESTS");
+
+    fill(checkinFormatted)("CHECKIN DATE");
+    fill(checkinFormatted)("CHECKIN_DATE");
+
+    fill(checkoutFormatted)("CHECKOUT DATE");
+    fill(checkoutFormatted)("CHECKOUT_DATE");
 
     // === INSERT & AUTO-RESIZE IMAGE TO A4 ===
     if (imageDataUrl && imageDataUrl.startsWith("data:")) {
