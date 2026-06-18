@@ -36,6 +36,10 @@ def form_page():
         <input type="text" name="passportId" placeholder="Passport ID" required />
         <input type="number" name="numGuests" placeholder="Number of Guests" required min="1" />
 
+        <label>PID <span style="font-weight:normal;">(3 digits, e.g. 001, 012)</span></label>
+        <input type="text" name="pid" placeholder="PID (e.g. 001)" required pattern="\\d{{3}}" maxlength="3" inputmode="numeric" title="Enter exactly 3 digits, e.g. 001" />
+        <small>Maps to the first 3 digits of the Hospitable property number.</small>
+
         <label>Check-In Date</label>
         <input type="date" name="checkinDate" required />
 
@@ -104,6 +108,7 @@ def submit_form():
         fullname = data.get("fullname")
         email = data.get("email")
         passport_id = data.get("passportId")
+        pid = data.get("pid")
         num_guests = data.get("numGuests")
         checkin_date = data.get("checkinDate")
         checkout_date = data.get("checkoutDate") or ""
@@ -113,6 +118,7 @@ def submit_form():
             "fullname": fullname,
             "email": email,
             "passportId": passport_id,
+            "pid": pid,
             "numGuests": num_guests,
             "checkinDate": checkin_date,
             "checkoutDate": checkout_date,
