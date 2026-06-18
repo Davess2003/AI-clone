@@ -2,7 +2,7 @@ function doPost(e) {
   try {
     const formType = e.parameter.form || "Form";
 
-    // === SINGLE SHARED TEMPLATE FOR ALL FORMS ===
+    // === SINGLEE SHARED TEMPLATE FOR ALL FORMS ===
     const templateId = "1QDzhQncskMkAkcIJq_tOraW2EU5HOP6zgOrr11YUhKs";
 
     // POA folder link — always included in the email body alongside the rental contract
