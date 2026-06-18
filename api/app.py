@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import base64
+import re
 import requests
 
 app = Flask(__name__)
@@ -11,6 +12,25 @@ APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbyCHiC6Fx9g0bvYR
 @app.route("/", methods=["GET"])
 def form_page():
     building = request.args.get("form", "Circle")  # Default to "Liv" if not provided
+
+    # If the URL's form value starts with a number (the property's leading PID,
+    # e.g. "129-R36-A-..."), lock the PID field to those 3 digits so it can't be changed.
+    pid_match = re.match(r"\s*(\d{1,3})", building)
+    if pid_match:
+        locked_pid = pid_match.group(1).zfill(3)
+        pid_field = (
+            f'<input type="text" name="pid" value="{locked_pid}" readonly '
+            f'pattern="\\d{{3}}" maxlength="3" inputmode="numeric" '
+            f'title="Locked to this property" />'
+        )
+        pid_hint = f"Locked to property {locked_pid} (set by the link)."
+    else:
+        pid_field = (
+            '<input type="text" name="pid" placeholder="PID (e.g. 001)" required '
+            'pattern="\\d{3}" maxlength="3" inputmode="numeric" '
+            'title="Enter exactly 3 digits, e.g. 001" />'
+        )
+        pid_hint = "Maps to the first 3 digits of the Hospitable property number."
 
     return f"""
     <!DOCTYPE html>
@@ -26,6 +46,7 @@ def form_page():
         button {{ background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; }}
         button:hover {{ background: #1e3a8a; }}
         small {{ color: #666; display: block; margin-top: -0.5rem; margin-bottom: 1rem; }}
+        input[readonly] {{ background: #e9ecef; color: #555; cursor: not-allowed; }}
       </style>
     </head>
     <body>
@@ -37,8 +58,8 @@ def form_page():
         <input type="number" name="numGuests" placeholder="Number of Guests" required min="1" />
 
         <label>PID <span style="font-weight:normal;">(3 digits, e.g. 001, 012)</span></label>
-        <input type="text" name="pid" placeholder="PID (e.g. 001)" required pattern="\\d{{3}}" maxlength="3" inputmode="numeric" title="Enter exactly 3 digits, e.g. 001" />
-        <small>Maps to the first 3 digits of the Hospitable property number.</small>
+        {pid_field}
+        <small>{pid_hint}</small>
 
         <label>Check-In Date</label>
         <input type="date" name="checkinDate" required />
