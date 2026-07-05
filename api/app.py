@@ -11,7 +11,7 @@ APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbyCHiC6Fx9g0bvYR
 # === ROUTES ===
 @app.route("/", methods=["GET"])
 def form_page():
-    building = request.args.get("form", "Circle")  # Default to "Liv" if not provided
+    building = request.args.get("form", "Coproperty")  # Default to "Liv" if not provided
 
     # If the URL's form value starts with a number (the property's leading PID,
     # e.g. "129-R36-A-..."), lock the PID field to those 3 digits so it can't be changed.
