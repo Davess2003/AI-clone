@@ -81,6 +81,38 @@ def form_page():
         const msg = document.getElementById("message");
         const building = "{building}";
 
+        // Downscale + JPEG-compress an image file in the browser so the base64
+        // payload stays well under Vercel's 4.5 MB serverless request limit.
+        // A raw iPhone photo (~6 MB) base64-encodes to ~8 MB and gets rejected
+        // with FUNCTION_PAYLOAD_TOO_LARGE (413); this keeps it under ~500 KB.
+        function compressImage(file, maxEdge = 1600, quality = 0.8) {{
+          return new Promise((resolve, reject) => {{
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error("Could not read the image file."));
+            reader.onload = () => {{
+              const img = new Image();
+              img.onerror = () => reject(new Error("Could not load the image."));
+              img.onload = () => {{
+                let {{ width, height }} = img;
+                if (width > height && width > maxEdge) {{
+                  height = Math.round(height * (maxEdge / width));
+                  width = maxEdge;
+                }} else if (height >= width && height > maxEdge) {{
+                  width = Math.round(width * (maxEdge / height));
+                  height = maxEdge;
+                }}
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL("image/jpeg", quality));
+              }};
+              img.src = reader.result;
+            }};
+            reader.readAsDataURL(file);
+          }});
+        }}
+
         form.addEventListener("submit", async (e) => {{
           e.preventDefault();
           msg.textContent = "Submitting...";
@@ -89,23 +121,13 @@ def form_page():
           const payload = {{}};
           formData.forEach((v, k) => payload[k] = v);
 
-          // Handle image upload
-          const imageFile = formData.get("image");
-          if (imageFile) {{
-            const reader = new FileReader();
-            reader.onload = async () => {{
-              payload.image = reader.result;
+          try {{
+            // Handle image upload (compressed client-side before encoding)
+            const imageFile = formData.get("image");
+            if (imageFile && imageFile.size > 0) {{
+              payload.image = await compressImage(imageFile);
+            }}
 
-              const res = await fetch("/submit?form=" + building, {{
-                method: "POST",
-                headers: {{ "Content-Type": "application/json" }},
-                body: JSON.stringify(payload)
-              }});
-              const data = await res.json();
-              msg.textContent = data.message;
-            }};
-            reader.readAsDataURL(imageFile);
-          }} else {{
             const res = await fetch("/submit?form=" + building, {{
               method: "POST",
               headers: {{ "Content-Type": "application/json" }},
@@ -113,6 +135,8 @@ def form_page():
             }});
             const data = await res.json();
             msg.textContent = data.message;
+          }} catch (err) {{
+            msg.textContent = "Error preparing your submission: " + err.message;
           }}
         }});
       </script>
