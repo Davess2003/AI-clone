@@ -33,6 +33,19 @@ function doPost(e) {
       ]
     };
 
+    // Properties that REPLACE the shared rental contract with their own single
+    // document, rather than adding forms alongside it (which is what
+    // PID_ONLY_TEMPLATES does). The override receives the passport image and the
+    // signature exactly as the shared contract would, so it is a drop-in swap.
+    // A PID listed here should normally not also appear in PID_ONLY_TEMPLATES.
+    const PID_TEMPLATE_OVERRIDES = {
+      // Noble BE 33, unit 19/244 (24A4). A power of attorney from the owner
+      // (MR. QIAN, LEI) letting the guest register their face scan as tenant —
+      // owner name, passport and unit are typed into the template, so this entry
+      // is valid for that one unit only.
+      "121": { templateId: "17HAlzOC7YWEqCD8m5OWSTAJymnetwn1IbMFyd7jpXNA", docName: "Power of Attorney" }
+    };
+
     // Font used for the {SIGNATURE} placeholder. Must be a font that exists in
     // Google Docs' font list (Dancing Script / Great Vibes / Sacramento / Caveat).
     const SIGNATURE_FONT = "Dancing Script";
@@ -101,14 +114,39 @@ function doPost(e) {
       "CHECKOUT_DATE": checkoutFormatted
     };
 
-    const attachments = [
-      buildDocFromTemplate(templateId, `CheckIn - ${formType} - ${fullname}`, {
-        fields: fields,
-        imageDataUrl: imageDataUrl,
-        signatureName: fullname,
-        signatureFont: SIGNATURE_FONT
-      })
-    ];
+    // Building forms tend to have separate Name / Surname boxes, so offer both the
+    // split parts and the full name — each template uses whichever it contains.
+    // Kept out of the shared `fields` map so the rental contract's behaviour is
+    // untouched: a bare {TOTAL} there would more likely mean a rent amount than a
+    // headcount, and {NAME} could read as "name of the agreement".
+    const nameParts = splitName(fullname);
+    const pidFields = Object.assign({}, fields, {
+      "NAME": nameParts.first,
+      "SURNAME": nameParts.last,
+      "FIRST_NAME": nameParts.first,
+      "LAST_NAME": nameParts.last,
+      "TOTAL": numGuests
+    });
+
+    // === MAIN DOCUMENT ===
+    // Normally the shared rental contract; for an overridden PID, that property's
+    // own form instead. Either way it is the one that carries the passport image.
+    const override = PID_TEMPLATE_OVERRIDES[pid];
+    const mainAttachment = override
+      ? buildDocFromTemplate(override.templateId, `${override.docName} - ${fullname}`, {
+          fields: pidFields,
+          imageDataUrl: imageDataUrl,
+          signatureName: fullname,
+          signatureFont: SIGNATURE_FONT
+        })
+      : buildDocFromTemplate(templateId, `CheckIn - ${formType} - ${fullname}`, {
+          fields: fields,
+          imageDataUrl: imageDataUrl,
+          signatureName: fullname,
+          signatureFont: SIGNATURE_FONT
+        });
+
+    const attachments = [mainAttachment];
 
     // === PID-SPECIFIC EXTRA FORMS ===
     // Only built when the submitted PID matches. Everything else is untouched.
@@ -118,20 +156,6 @@ function doPost(e) {
     const pidRules = PID_ONLY_TEMPLATES[pid] || [];
 
     if (pidRules.length) {
-      // Some of these forms have separate Name / Surname boxes, so offer both the
-      // split parts and the full name — each template uses whichever it contains.
-      const nameParts = splitName(fullname);
-      const pidFields = Object.assign({}, fields, {
-        "NAME": nameParts.first,
-        "SURNAME": nameParts.last,
-        "FIRST_NAME": nameParts.first,
-        "LAST_NAME": nameParts.last,
-        // The 170 register form labels its occupant-count box "Total". Kept out of
-        // the shared `fields` map on purpose — a bare {TOTAL} in the rental
-        // contract would more likely mean a rent amount than a headcount.
-        "TOTAL": numGuests
-      });
-
       pidRules.forEach(function (rule) {
         if (!rule.templateId || rule.templateId.indexOf("PASTE_") === 0) return; // not configured yet
 
