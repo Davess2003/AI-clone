@@ -1,0 +1,12 @@
+# clasp tooling (installed under apps_script/)
+node_modules/
+
+# clasp credentials — never commit these
+.clasprc.json
+
+# local secrets
+.env
+
+# python
+__pycache__/
+*.pyc

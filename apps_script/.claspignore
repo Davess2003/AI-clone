@@ -1,0 +1,5 @@
+# Only Code.gs and appsscript.json belong in the Apps Script project.
+# Without this, clasp tries to push node_modules and fails.
+**/**
+!Code.gs
+!appsscript.json

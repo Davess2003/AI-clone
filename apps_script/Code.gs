@@ -5,6 +5,38 @@ function doPost(e) {
     // === SINGLEE SHARED TEMPLATE FOR ALL FORMS ===
     const templateId = "1QDzhQncskMkAkcIJq_tOraW2EU5HOP6zgOrr11YUhKs";
 
+    // Extra juristic-office forms, generated only for specific properties.
+    // Doc ID = the long string in the doc URL: docs.google.com/document/d/<THIS>/edit
+    //
+    // Keys are the 3-digit PID as a QUOTED STRING. The quotes matter: a bare 061
+    // is an octal literal in JS and would silently become 49, so the form would
+    // never generate. Always "061", never 061.
+    const PID_ONLY_TEMPLATES = {
+      // 061 and 170 are different buildings that both read as "Circle" —
+      // Circle Condominium here, The Circle Living Prototype below. Don't merge them.
+      "061": [ // Circle Condominium
+        { templateId: "1aZp5ogm0Xf8s4nrxH35fRHG_Zpw89Lo1ic2l3ciBv8g", docName: "Residential Register" }
+      ],
+      "170": [ // Fragrant / The Circle Living Prototype
+        // House rules acknowledgement. {SIGNATURE} sits on the
+        // "(ผู้เช่า/บริวาร) (Tenant / Occupant(s))" line; the other signature line
+        // is the co-owner's and is left blank for hand-signing.
+        { templateId: "1tiQ2JcKhb2Vpn1b7YUFAT6FU8X70ig-CgII3fIDsYto", docName: "House Rules Acknowledgement" },
+
+        // Register form. The scanned form is an image with {NAME} {SURNAME}
+        // {SIGNATURE} typed over it as body text, so only those three fill —
+        // every other box is blank for hand-completion. NOT the earlier .docx
+        // upload (1KFcD4cMMsYtETfJhySA4aHzeI96DDsli): its tags were in Word text
+        // boxes, which convert to Docs drawings and are invisible to getBody().
+        // templates/residential-status-170.md lists the tags a full retype could use.
+        { templateId: "1IheOxItkQ7kdD3cTPLPNXgtMn-CPrW-S3xz6d_IXr8E", docName: "Register Form" }
+      ]
+    };
+
+    // Font used for the {SIGNATURE} placeholder. Must be a font that exists in
+    // Google Docs' font list (Dancing Script / Great Vibes / Sacramento / Caveat).
+    const SIGNATURE_FONT = "Dancing Script";
+
     // POA folder link — always included in the email body alongside the rental contract
     const POA_FOLDER_URL = "https://drive.google.com/drive/folders/1BtckiJL60BquXN0sadkoh6tztT3NI-YX";
 
@@ -49,76 +81,78 @@ function doPost(e) {
 
     const checkoutFormatted = formatDate(checkoutDate);
 
-    const templateFile = DriveApp.getFileById(templateId);
-    const copy = templateFile.makeCopy(`CheckIn - ${formType} - ${fullname}`);
-    const doc = DocumentApp.openById(copy.getId());
-    const body = doc.getBody();
+    // Every field covers both the spaced and the underscore naming style so it
+    // works regardless of how the placeholder is written in the doc.
+    const fields = {
+      "FULLNAME": fullname,
+      "GUEST_FULL_NAME": fullname,
+      "FULL NAME": fullname,
+      "EMAIL": email,
+      "PASSPORT ID": passportId,
+      "PASSPORT_ID": passportId,
+      "PID": pid,
+      "FULL_ADDRESS": fullAddress,
+      "FULL ADDRESS": fullAddress,
+      "NUMBER OF GUESTS": numGuests,
+      "NUMBER_OF_GUESTS": numGuests,
+      "CHECKIN DATE": checkinFormatted,
+      "CHECKIN_DATE": checkinFormatted,
+      "CHECKOUT DATE": checkoutFormatted,
+      "CHECKOUT_DATE": checkoutFormatted
+    };
 
-    // Replace placeholders. Curly braces are escaped because replaceText() treats
-    // the search string as a regex. Each field covers both the spaced and the
-    // underscore naming style so it works regardless of how the doc is written.
-    function fill(value) {
-      const v = value == null ? "" : value.toString();
-      return function (placeholder) {
-        body.replaceText("\\{" + placeholder + "\\}", v);
-      };
+    const attachments = [
+      buildDocFromTemplate(templateId, `CheckIn - ${formType} - ${fullname}`, {
+        fields: fields,
+        imageDataUrl: imageDataUrl,
+        signatureName: fullname,
+        signatureFont: SIGNATURE_FONT
+      })
+    ];
+
+    // === PID-SPECIFIC EXTRA FORMS ===
+    // Only built when the submitted PID matches. Everything else is untouched.
+    const extraFormNames = [];
+    const extraFormErrors = [];
+    // `pid` is already zero-padded to 3 digits above, so it matches the keys directly.
+    const pidRules = PID_ONLY_TEMPLATES[pid] || [];
+
+    if (pidRules.length) {
+      // Some of these forms have separate Name / Surname boxes, so offer both the
+      // split parts and the full name — each template uses whichever it contains.
+      const nameParts = splitName(fullname);
+      const pidFields = Object.assign({}, fields, {
+        "NAME": nameParts.first,
+        "SURNAME": nameParts.last,
+        "FIRST_NAME": nameParts.first,
+        "LAST_NAME": nameParts.last,
+        // The 170 register form labels its occupant-count box "Total". Kept out of
+        // the shared `fields` map on purpose — a bare {TOTAL} in the rental
+        // contract would more likely mean a rent amount than a headcount.
+        "TOTAL": numGuests
+      });
+
+      pidRules.forEach(function (rule) {
+        if (!rule.templateId || rule.templateId.indexOf("PASTE_") === 0) return; // not configured yet
+
+        // Each extra form is isolated: a bad template ID, a .docx that
+        // DocumentApp can't open, or a sharing problem must not throw away the
+        // whole submission — the guest's rental contract still has to go out.
+        try {
+          attachments.push(
+            buildDocFromTemplate(rule.templateId, `${rule.docName} - ${fullname}`, {
+              fields: pidFields,
+              signatureName: fullname,
+              signatureFont: SIGNATURE_FONT
+            })
+          );
+          extraFormNames.push(rule.docName);
+        } catch (formErr) {
+          Logger.log("Extra form failed (" + rule.docName + "): " + formErr.stack);
+          extraFormErrors.push(rule.docName + " — " + formErr.message);
+        }
+      });
     }
-
-    fill(fullname)("FULLNAME");
-    fill(fullname)("GUEST_FULL_NAME");
-    fill(fullname)("FULL NAME");
-
-    fill(email)("EMAIL");
-
-    fill(passportId)("PASSPORT ID");
-    fill(passportId)("PASSPORT_ID");
-
-    fill(pid)("PID");
-
-    fill(fullAddress)("FULL_ADDRESS");
-    fill(fullAddress)("FULL ADDRESS");
-
-    fill(numGuests)("NUMBER OF GUESTS");
-    fill(numGuests)("NUMBER_OF_GUESTS");
-
-    fill(checkinFormatted)("CHECKIN DATE");
-    fill(checkinFormatted)("CHECKIN_DATE");
-
-    fill(checkoutFormatted)("CHECKOUT DATE");
-    fill(checkoutFormatted)("CHECKOUT_DATE");
-
-    // === INSERT & AUTO-RESIZE IMAGE TO A4 ===
-    if (imageDataUrl && imageDataUrl.startsWith("data:")) {
-      const base64Data = imageDataUrl.split(",")[1];
-      const contentType = imageDataUrl.split(";")[0].split(":")[1];
-      const blob = Utilities.base64Decode(base64Data);
-      const imageBlob = Utilities.newBlob(blob, contentType, "image.png");
-
-      body.appendParagraph("\nAttached Image:");
-
-      const image = body.appendImage(imageBlob);
-
-      const pageWidth = doc.getPageWidth();
-      const marginLeft = doc.getMarginLeft();
-      const marginRight = doc.getMarginRight();
-      const maxWidth = pageWidth - marginLeft - marginRight;
-
-      const originalWidth = image.getWidth();
-      const originalHeight = image.getHeight();
-
-      if (originalWidth > maxWidth) {
-        const ratio = maxWidth / originalWidth;
-        image.setWidth(maxWidth);
-        image.setHeight(originalHeight * ratio);
-      }
-
-      image.getParent().setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    }
-
-    doc.saveAndClose();
-
-    const mainPdf = DriveApp.getFileById(copy.getId()).getAs("application/pdf");
-    const attachments = [mainPdf];
 
     let emailBody = `Dear ${fullname},
 
@@ -129,6 +163,22 @@ Property: ${matchedPropertyName || "—"}
 Address: ${fullAddress}
 Number of Guests: ${numGuests}
 `;
+
+    if (extraFormNames.length) {
+      emailBody += `
+Also attached for this building, to go to the juristic office:
+${extraFormNames.map(function (n) { return "  - " + n; }).join("\n")}
+`;
+    }
+
+    // Surfaced in the email so a silently missing juristic form gets noticed
+    // rather than being discovered at the office.
+    if (extraFormErrors.length) {
+      emailBody += `
+⚠️ These building forms could NOT be generated and must be done manually:
+${extraFormErrors.map(function (n) { return "  - " + n; }).join("\n")}
+`;
+    }
 
     emailBody += `
 
@@ -158,6 +208,128 @@ Dave`;
     return ContentService
       .createTextOutput(JSON.stringify({ message: "❌ Error: " + err.message }))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Splits a full name into first name + surname on whitespace. The first word is
+ * the given name and everything after it is the surname, so multi-word family
+ * names ("Maria del Carmen Ruiz") stay together. A single word leaves the
+ * surname blank rather than duplicating it.
+ *
+ * @param {string} fullname
+ * @return {{first: string, last: string}}
+ */
+function splitName(fullname) {
+  const parts = (fullname || "").trim().split(/\s+/).filter(String);
+  if (parts.length === 0) return { first: "", last: "" };
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+/**
+ * Rejects a template that DocumentApp can't open, before anything gets copied.
+ *
+ * An uploaded .doc/.docx keeps its Word MIME type in Drive, and
+ * DocumentApp.openById() then fails with a message that says nothing about the
+ * real cause. Since extra-form failures are surfaced to the recipient by name,
+ * it's worth spending one metadata read to make that line actionable.
+ *
+ * @param {string} templateId
+ */
+function assertTemplateIsGoogleDoc(templateId) {
+  const mime = DriveApp.getFileById(templateId).getMimeType();
+  if (mime !== MimeType.GOOGLE_DOCS) {
+    throw new Error(
+      "template is not a Google Doc (" + mime + "). Open it in Drive and use " +
+      "File → Save as Google Docs, then use the new doc's ID."
+    );
+  }
+}
+
+/**
+ * Copies a template doc, fills its {PLACEHOLDER} tags, optionally appends the
+ * uploaded image, and returns the result as a PDF blob.
+ *
+ * @param {string} templateId  Doc ID of the template to copy
+ * @param {string} docName     Name for the generated copy
+ * @param {{fields: Object, imageDataUrl: (string|undefined),
+ *          signatureName: (string|undefined), signatureFont: (string|undefined)}} opts
+ * @return {Blob} the generated PDF
+ */
+function buildDocFromTemplate(templateId, docName, opts) {
+  assertTemplateIsGoogleDoc(templateId);
+  const copy = DriveApp.getFileById(templateId).makeCopy(docName);
+  const doc = DocumentApp.openById(copy.getId());
+  const body = doc.getBody();
+
+  // Curly braces are escaped because replaceText() treats the search string as a regex.
+  const fields = opts.fields || {};
+  Object.keys(fields).forEach(function (placeholder) {
+    const v = fields[placeholder] == null ? "" : fields[placeholder].toString();
+    body.replaceText("\\{" + placeholder + "\\}", v);
+  });
+
+  if (opts.signatureName) {
+    fillSignature(body, opts.signatureName, opts.signatureFont);
+  }
+
+  // === INSERT & AUTO-RESIZE IMAGE TO A4 ===
+  const imageDataUrl = opts.imageDataUrl;
+  if (imageDataUrl && imageDataUrl.startsWith("data:")) {
+    const base64Data = imageDataUrl.split(",")[1];
+    const contentType = imageDataUrl.split(";")[0].split(":")[1];
+    const blob = Utilities.base64Decode(base64Data);
+    const imageBlob = Utilities.newBlob(blob, contentType, "image.png");
+
+    body.appendParagraph("\nAttached Image:");
+
+    const image = body.appendImage(imageBlob);
+
+    const pageWidth = doc.getPageWidth();
+    const marginLeft = doc.getMarginLeft();
+    const marginRight = doc.getMarginRight();
+    const maxWidth = pageWidth - marginLeft - marginRight;
+
+    const originalWidth = image.getWidth();
+    const originalHeight = image.getHeight();
+
+    if (originalWidth > maxWidth) {
+      const ratio = maxWidth / originalWidth;
+      image.setWidth(maxWidth);
+      image.setHeight(originalHeight * ratio);
+    }
+
+    image.getParent().setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  }
+
+  doc.saveAndClose();
+  return DriveApp.getFileById(copy.getId()).getAs("application/pdf");
+}
+
+/**
+ * Replaces every {SIGNATURE} placeholder with the guest's name in a handwriting
+ * font. Done manually instead of via replaceText() because replaceText() can't
+ * style the text it inserts.
+ */
+function fillSignature(body, name, fontFamily) {
+  const placeholder = "\\{SIGNATURE\\}";
+  let guard = 0;
+  let found = body.findText(placeholder);
+
+  while (found && guard++ < 50) {
+    const text = found.getElement().asText();
+    const start = found.getStartOffset();
+
+    text.deleteText(start, found.getEndOffsetInclusive());
+    text.insertText(start, name);
+    text.setFontFamily(start, start + name.length - 1, fontFamily || "Dancing Script");
+    text.setFontSize(start, start + name.length - 1, 16);
+    text.setBold(start, start + name.length - 1, false);
+    text.setItalic(start, start + name.length - 1, false);
+
+    // Re-search from the top: the range above is stale after the edit.
+    found = body.findText(placeholder);
   }
 }
 

@@ -6,7 +6,7 @@ import requests
 app = Flask(__name__)
 
 # === CONFIGURATION ===
-APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbw9nGbWJI07gA99H0OjaAeqtJyF1CAC4AMa_MaL2CwOQHEPcdhqdFMHQ6mCxyB1vJD0xw/exec"
+APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbx1sJJDdGkJjOdhEFghDsXxcz51YnG0KOB8Rb1cbxBVDsdBP5Gj1umWFaSmIDh2xolO/exec"
 
 # === ROUTES ===
 @app.route("/", methods=["GET"])
@@ -172,11 +172,36 @@ def submit_form():
 
         form_url = f"{APPS_SCRIPT_BASE_URL}?form={building}"
 
-        response = requests.post(form_url, json=payload)
-        data = response.json()
+        response = requests.post(form_url, json=payload, timeout=120)
+
+        # Apps Script only returns JSON when the deployment is alive and reachable.
+        # A deleted deployment returns a 404 HTML page and a permissions problem
+        # returns a login page, both of which used to surface as the useless
+        # "Expecting value: line 1 column 1 (char 0)". Name the real cause instead.
+        try:
+            data = response.json()
+        except ValueError:
+            if response.status_code == 404:
+                detail = (
+                    "the Apps Script deployment no longer exists (404). "
+                    "It needs to be redeployed and APPS_SCRIPT_BASE_URL updated."
+                )
+            elif "accounts.google.com" in response.url or response.status_code in (401, 403):
+                detail = (
+                    "Apps Script returned a sign-in page. Set the web app's "
+                    "'Who has access' to 'Anyone' and redeploy."
+                )
+            else:
+                detail = (
+                    f"Apps Script returned {response.status_code} instead of JSON "
+                    f"({response.text[:200].strip()!r})"
+                )
+            return jsonify({"message": f"❌ Could not reach the document service: {detail}"}), 502
 
         return jsonify({"message": data.get("message", "Submitted successfully!")})
 
+    except requests.exceptions.RequestException as e:
+        return jsonify({"message": f"❌ Network error reaching Apps Script: {e}"}), 502
     except Exception as e:
         return jsonify({"message": f"Error submitting form: {str(e)}"})
 
