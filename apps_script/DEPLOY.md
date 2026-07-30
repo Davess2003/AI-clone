@@ -116,9 +116,16 @@ deployment with a *new* URL, which silently breaks `api/app.py`.
 | Residential Register (PID 061 / Circle Condominium) | `1aZp5ogm0Xf8s4nrxH35fRHG_Zpw89Lo1ic2l3ciBv8g` | coproperty.info@gmail.com |
 | House Rules Acknowledgement (PID 170) | `1tiQ2JcKhb2Vpn1b7YUFAT6FU8X70ig-CgII3fIDsYto` | coproperty.info@gmail.com |
 | Register Form (PID 170) | `1IheOxItkQ7kdD3cTPLPNXgtMn-CPrW-S3xz6d_IXr8E` | coproperty.info@gmail.com |
+| Power of Attorney (PID 121 / Noble BE 33, unit 19/244) | `17HAlzOC7YWEqCD8m5OWSTAJymnetwn1IbMFyd7jpXNA` | coproperty.info@gmail.com |
 
 Any entry whose ID still reads `PASTE_…` is skipped, so deploying with one form
 configured and one not is safe — the unset form simply isn't attached.
+
+PID 121's POA is the only extra form flagged `includeImage: true`, so it carries a
+copy of the passport photo as well as the details — a POA has to travel with the
+document it authorises against. It is also the only template tied to a single
+unit: the owner's name, passport number and unit number are typed in, not tagged,
+so the entry is wrong the moment 121 means a different unit.
 
 The Register Form is the scanned form with tags typed over it as body text, so it
 fills `{NAME}` `{SURNAME}` `{SIGNATURE}` only — every other box goes to the office
