@@ -30,20 +30,15 @@ function doPost(e) {
         // boxes, which convert to Docs drawings and are invisible to getBody().
         // templates/residential-status-170.md lists the tags a full retype could use.
         { templateId: "1IheOxItkQ7kdD3cTPLPNXgtMn-CPrW-S3xz6d_IXr8E", docName: "Register Form" }
+      ],
+      "121": [ // Noble BE 33, unit 19/244 (24A4)
+        // Power of attorney from the owner (MR. QIAN, LEI) letting the guest
+        // register their face scan as tenant. Owner name, passport and unit are
+        // typed into the template, so this entry is valid for that one unit only.
+        // includeImage attaches the passport photo, which the juristic office
+        // needs alongside the POA — the only extra form that gets it.
+        { templateId: "17HAlzOC7YWEqCD8m5OWSTAJymnetwn1IbMFyd7jpXNA", docName: "Power of Attorney", includeImage: true }
       ]
-    };
-
-    // Properties that REPLACE the shared rental contract with their own single
-    // document, rather than adding forms alongside it (which is what
-    // PID_ONLY_TEMPLATES does). The override receives the passport image and the
-    // signature exactly as the shared contract would, so it is a drop-in swap.
-    // A PID listed here should normally not also appear in PID_ONLY_TEMPLATES.
-    const PID_TEMPLATE_OVERRIDES = {
-      // Noble BE 33, unit 19/244 (24A4). A power of attorney from the owner
-      // (MR. QIAN, LEI) letting the guest register their face scan as tenant —
-      // owner name, passport and unit are typed into the template, so this entry
-      // is valid for that one unit only.
-      "121": { templateId: "17HAlzOC7YWEqCD8m5OWSTAJymnetwn1IbMFyd7jpXNA", docName: "Power of Attorney" }
     };
 
     // Font used for the {SIGNATURE} placeholder. Must be a font that exists in
@@ -128,25 +123,14 @@ function doPost(e) {
       "TOTAL": numGuests
     });
 
-    // === MAIN DOCUMENT ===
-    // Normally the shared rental contract; for an overridden PID, that property's
-    // own form instead. Either way it is the one that carries the passport image.
-    const override = PID_TEMPLATE_OVERRIDES[pid];
-    const mainAttachment = override
-      ? buildDocFromTemplate(override.templateId, `${override.docName} - ${fullname}`, {
-          fields: pidFields,
-          imageDataUrl: imageDataUrl,
-          signatureName: fullname,
-          signatureFont: SIGNATURE_FONT
-        })
-      : buildDocFromTemplate(templateId, `CheckIn - ${formType} - ${fullname}`, {
-          fields: fields,
-          imageDataUrl: imageDataUrl,
-          signatureName: fullname,
-          signatureFont: SIGNATURE_FONT
-        });
-
-    const attachments = [mainAttachment];
+    const attachments = [
+      buildDocFromTemplate(templateId, `CheckIn - ${formType} - ${fullname}`, {
+        fields: fields,
+        imageDataUrl: imageDataUrl,
+        signatureName: fullname,
+        signatureFont: SIGNATURE_FONT
+      })
+    ];
 
     // === PID-SPECIFIC EXTRA FORMS ===
     // Only built when the submitted PID matches. Everything else is untouched.
@@ -166,6 +150,9 @@ function doPost(e) {
           attachments.push(
             buildDocFromTemplate(rule.templateId, `${rule.docName} - ${fullname}`, {
               fields: pidFields,
+              // Opt-in per form: most juristic forms want the details only, but a
+              // POA has to travel with the passport copy it authorises against.
+              imageDataUrl: rule.includeImage ? imageDataUrl : undefined,
               signatureName: fullname,
               signatureFont: SIGNATURE_FONT
             })
