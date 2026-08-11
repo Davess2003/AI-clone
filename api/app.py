@@ -6,7 +6,7 @@ import requests
 app = Flask(__name__)
 
 # === CONFIGURATION ===
-APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbztCSZJGssvF6-SoKDN_OcYuliLaSiMqsFMi2FjF4-43g7hB6fFFBAKZfB-0YkoieGT/exec"
+APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbwYKWJqC54SQ6rQTzOgsjVCmosZaJiHDamz9IGiOsvbYIh0JyCpaxLZBHlii8nfGFKC/exec"
 
 # === ROUTES ===
 @app.route("/", methods=["GET"])

@@ -76,18 +76,12 @@ function doPost(e) {
     const checkinDate = new Date(checkinDateStr);
     const checkinFormatted = formatDate(checkinDate);
 
-    let checkoutDate;
-    const minimumCheckout = new Date(checkinDate);
-    minimumCheckout.setMonth(minimumCheckout.getMonth() + 1);
-
-    if (!checkoutDateStr || checkoutDateStr.trim() === "") {
-      checkoutDate = minimumCheckout;
-    } else {
-      const inputCheckout = new Date(checkoutDateStr);
-      checkoutDate = inputCheckout < minimumCheckout ? minimumCheckout : inputCheckout;
-    }
-
-    const checkoutFormatted = formatDate(checkoutDate);
+    // Checkout is whatever the guest entered — no one-month minimum, and no
+    // adjustment of a date that falls earlier than that. The field is optional on
+    // the form, so a blank one stays blank on the paperwork rather than having a
+    // date invented for it.
+    checkoutDateStr = (checkoutDateStr || "").trim();
+    const checkoutFormatted = checkoutDateStr ? formatDate(new Date(checkoutDateStr)) : "";
 
     // Every field covers both the spaced and the underscore naming style so it
     // works regardless of how the placeholder is written in the doc.
