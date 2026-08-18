@@ -6,7 +6,7 @@ import requests
 app = Flask(__name__)
 
 # === CONFIGURATION ===
-APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbwW9uG4hKSfrUMoAF6zT9khK44EQ3F7hKf0WlBTBB-sWuuGNVCni1bKoij59lb6R1jaiw/exec"
+APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbywiUdyRJIOlrX-bmVSxj4JolCFiG1YRhZ1XWnko806nJo9hAkMAeT4iXOrVQmMBNZ5ww/exec"
 
 def lookup_reservation(code):
     """Ask the Apps Script deployment to resolve a Hospitable reservation code.

@@ -102,6 +102,14 @@ function doPost(e) {
         // templates/residential-status-170.md lists the tags a full retype could use.
         { templateId: "1IheOxItkQ7kdD3cTPLPNXgtMn-CPrW-S3xz6d_IXr8E", docName: "Register Form" }
       ],
+      "193": [ // Ashton Silom, room 340
+        // Scanned form with the tags typed over it as body text. Only
+        // {CHECKIN_DATE} and {SIGNATURE} are tagged — the Name and Surname boxes
+        // are still bare labels, so they print blank until {NAME} and {SURNAME}
+        // are typed into them. Room 340 is written into the template, so this
+        // entry is valid for that one unit only.
+        { templateId: "18HxIliZYQIGXBLkWt0LeE8Cq2tTxfutCpIJYMe1PRDg", docName: "Ashton Silom Extra Form" }
+      ],
       "121": [ // Noble BE 33, unit 19/244 (24A4)
         // Power of attorney from the owner (MR. QIAN, LEI) letting the guest
         // register their face scan as tenant. Owner name, passport and unit are
