@@ -139,7 +139,6 @@ def form_page():
 
         <label>Checkout Date</label>
         <input type="date" name="checkoutDate" value="{checkout_value}" />
-        <small>Stays shorter than 28 days are written up as a one-month lease.</small>
 
         <label>Upload Passport Image</label>
         <input type="file" name="image" accept="image/*" required />
