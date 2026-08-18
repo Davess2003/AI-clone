@@ -1,3 +1,74 @@
+/**
+ * Prefill lookup for the check-in form: GET <exec-url>?code=<reservation code>
+ * returns the PID, check-in and checkout dates for that Hospitable reservation.
+ *
+ * Lives here rather than in api/app.py so the Hospitable token stays in one
+ * place — Vercel never needs a copy of it.
+ *
+ * Always answers 200 with JSON; a failed lookup comes back as {"error": "..."}
+ * so the form can fall back to empty fields instead of breaking.
+ */
+function doGet(e) {
+  const code = ((e && e.parameter && e.parameter.code) || "").trim();
+  let payload;
+
+  if (!code) {
+    payload = { error: "Missing ?code= parameter" };
+  } else {
+    try {
+      payload = getReservationPrefill(code);
+    } catch (err) {
+      Logger.log("Prefill lookup failed (" + code + "): " + err.stack);
+      payload = { error: err.message };
+    }
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Looks up one reservation by its Hospitable code and reduces it to the fields
+ * the check-in form prefills.
+ *
+ * check_in / check_out arrive as ISO strings carrying the property's own UTC
+ * offset ("2026-07-31T12:00:00+07:00"), so the leading 10 characters are already
+ * the correct local date — parsing them into a Date would risk shifting the day.
+ *
+ * @param {string} code  reservation code, e.g. "HMZX9XJ22A"
+ * @return {{code: string, pid: string, checkinDate: string, checkoutDate: string,
+ *           numGuests: (number|string), propertyName: string}}
+ */
+function getReservationPrefill(code) {
+  const url = "https://public.api.hospitable.com/v2/reservations/" +
+    encodeURIComponent(code) + "?include=properties";
+
+  const res = UrlFetchApp.fetch(url, {
+    method: "get",
+    headers: { "Authorization": "Bearer " + getHospitableToken(), "Accept": "application/json" },
+    muteHttpExceptions: true
+  });
+
+  if (res.getResponseCode() === 404) throw new Error("No reservation found for code " + code);
+  if (res.getResponseCode() !== 200) {
+    throw new Error("Hospitable API " + res.getResponseCode() + ": " + res.getContentText().slice(0, 200));
+  }
+
+  const d = JSON.parse(res.getContentText()).data || {};
+  const prop = (d.properties || [])[0] || {};
+  const m = (prop.name || "").match(/^\s*(\d+)/); // leading number of the name is the PID
+
+  return {
+    code: d.code || code,
+    pid: m ? m[1].padStart(3, "0") : "",
+    checkinDate: (d.check_in || d.arrival_date || "").slice(0, 10),
+    checkoutDate: (d.check_out || d.departure_date || "").slice(0, 10),
+    numGuests: (d.guests && d.guests.total) || "",
+    propertyName: prop.name || ""
+  };
+}
+
 function doPost(e) {
   try {
     const formType = e.parameter.form || "Form";
@@ -76,12 +147,28 @@ function doPost(e) {
     const checkinDate = new Date(checkinDateStr);
     const checkinFormatted = formatDate(checkinDate);
 
-    // Checkout is whatever the guest entered — no one-month minimum, and no
-    // adjustment of a date that falls earlier than that. The field is optional on
-    // the form, so a blank one stays blank on the paperwork rather than having a
-    // date invented for it.
+    // A checkout at least MIN_STAY_DAYS after check-in is used exactly as entered.
+    // Anything shorter — including a blank or unparseable field — is written up as
+    // a one-month stay instead, so the paperwork always shows a lease of at least
+    // a month. 28 rather than 30 so that a February stay still counts as a month.
+    const MIN_STAY_DAYS = 28;
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
     checkoutDateStr = (checkoutDateStr || "").trim();
-    const checkoutFormatted = checkoutDateStr ? formatDate(new Date(checkoutDateStr)) : "";
+    const enteredCheckout = checkoutDateStr ? new Date(checkoutDateStr) : null;
+    const stayLength = (enteredCheckout && !isNaN(enteredCheckout.getTime()))
+      ? (enteredCheckout - checkinDate) / MS_PER_DAY
+      : -1;
+
+    let checkoutDate;
+    if (stayLength >= MIN_STAY_DAYS) {
+      checkoutDate = enteredCheckout;
+    } else {
+      checkoutDate = new Date(checkinDate);
+      checkoutDate.setMonth(checkoutDate.getMonth() + 1);
+    }
+
+    const checkoutFormatted = formatDate(checkoutDate);
 
     // Every field covers both the spaced and the underscore naming style so it
     // works regardless of how the placeholder is written in the doc.
@@ -346,6 +433,24 @@ function formatDate(date) {
 }
 
 /**
+ * The Hospitable Public API token, used by both the address lookup and the
+ * reservation prefill.
+ *
+ * Prefers the HOSPITABLE_TOKEN script property (Project Settings → Script
+ * Properties) and falls back to the literal below, so the token can be moved out
+ * of the source by adding the property — no code change needed. Rotating it then
+ * means editing the property rather than redeploying.
+ *
+ * @return {string}
+ */
+function getHospitableToken() {
+  const fromProperties = PropertiesService.getScriptProperties().getProperty("HOSPITABLE_TOKEN");
+  if (fromProperties) return fromProperties;
+
+  return "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI5YTYyNGRmMC0xMmYxLTQ0OGUtYjg4NC00MzY3ODBhNWQzY2QiLCJqdGkiOiJlMzk1NzZjOTE4ZTc4ZjIzYjgxZGVhNjhkYmUzNzhmZWE5NmZlYmZlMTk4MmQ1NmZhZjMwYjM5Mzk5ZWNjZjUwNzhkMzRiYmZkZDk5YWNiYiIsImlhdCI6MTc2NzY4MjYwOC4zODY3NDksIm5iZiI6MTc2NzY4MjYwOC4zODY3NTQsImV4cCI6MTc5OTIxODYwOC4zODEyMTYsInN1YiI6IjIwNzQyMiIsInNjb3BlcyI6WyJwYXQ6cmVhZCIsInBhdDp3cml0ZSJdfQ.ZzkFpTzRAo_fwiRiU22clBsEIw5fpGs7zlJdNcNu42fcQJqvURls3L8ZZZYx4NatwyijckMWR9EMSxDKQtOW1terbCbU_isw6zQzomXjJKePUAqjANS-nI_OyKrN7biDck_uyXd2EdoglmcHEbEa5qopIo8Z2MRluD-YZJjt0hfUTdVJzsbVHji5FC4goLERTOnWY1xlvV1WhSh97vEcEBZCot4yjrHYOtkTG5gSkn6_I7BrkRcWH1v0NB942yT8G2DmZ9_elsTzQp7Hh7ucRWqLqcUCcJoSB5YXHK_lkZYQz-Ax2_ocfqollhMxCLVsCswzf8_DPj-UxUSLL9SlY2eOT7u6JrokP54Irtt8ZRZ86ulUF3107IVg9ocHInJ5vbeSeE-eJNAM6_qfApWDhI0JXxlhT_oZ6qzBdukUhM-KnTSsdj5a0FMVw5M2-HdnTy0dx_xOQkLFBgg3NDFup4fWq7YOXDnLVYZS5EO26p6FTVUxHxI4Vm8ifjwzFMm-AjgGLDzJQQwBqAQy_1YD-m0-ShcxhCvbJ0TUqrcL-31RJm2XOUdKqxtKDVpK6VNADiHXcoiWSOjat6RNgaVfM0662UVfZUUfJ-VW53M6L4yfU2K-FUR2Kq8hhABNht4sNBddWRUikjTAITn1c43dZ9Qtq3dbcfh5RF1eH5pAmVA";
+}
+
+/**
  * Finds the Hospitable property whose name starts with the given PID number
  * (the leading digits of property.name, e.g. "001-R36-..." or "04_N276 F26")
  * and returns its full address.
@@ -358,8 +463,7 @@ function formatDate(date) {
  * @return {{name: string, address: string, multiple: boolean}|null}
  */
 function getPropertyAddressByPID(pid) {
-  const token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI5YTYyNGRmMC0xMmYxLTQ0OGUtYjg4NC00MzY3ODBhNWQzY2QiLCJqdGkiOiJlMzk1NzZjOTE4ZTc4ZjIzYjgxZGVhNjhkYmUzNzhmZWE5NmZlYmZlMTk4MmQ1NmZhZjMwYjM5Mzk5ZWNjZjUwNzhkMzRiYmZkZDk5YWNiYiIsImlhdCI6MTc2NzY4MjYwOC4zODY3NDksIm5iZiI6MTc2NzY4MjYwOC4zODY3NTQsImV4cCI6MTc5OTIxODYwOC4zODEyMTYsInN1YiI6IjIwNzQyMiIsInNjb3BlcyI6WyJwYXQ6cmVhZCIsInBhdDp3cml0ZSJdfQ.ZzkFpTzRAo_fwiRiU22clBsEIw5fpGs7zlJdNcNu42fcQJqvURls3L8ZZZYx4NatwyijckMWR9EMSxDKQtOW1terbCbU_isw6zQzomXjJKePUAqjANS-nI_OyKrN7biDck_uyXd2EdoglmcHEbEa5qopIo8Z2MRluD-YZJjt0hfUTdVJzsbVHji5FC4goLERTOnWY1xlvV1WhSh97vEcEBZCot4yjrHYOtkTG5gSkn6_I7BrkRcWH1v0NB942yT8G2DmZ9_elsTzQp7Hh7ucRWqLqcUCcJoSB5YXHK_lkZYQz-Ax2_ocfqollhMxCLVsCswzf8_DPj-UxUSLL9SlY2eOT7u6JrokP54Irtt8ZRZ86ulUF3107IVg9ocHInJ5vbeSeE-eJNAM6_qfApWDhI0JXxlhT_oZ6qzBdukUhM-KnTSsdj5a0FMVw5M2-HdnTy0dx_xOQkLFBgg3NDFup4fWq7YOXDnLVYZS5EO26p6FTVUxHxI4Vm8ifjwzFMm-AjgGLDzJQQwBqAQy_1YD-m0-ShcxhCvbJ0TUqrcL-31RJm2XOUdKqxtKDVpK6VNADiHXcoiWSOjat6RNgaVfM0662UVfZUUfJ-VW53M6L4yfU2K-FUR2Kq8hhABNht4sNBddWRUikjTAITn1c43dZ9Qtq3dbcfh5RF1eH5pAmVA";
-  if (!token) throw new Error("HOSPITABLE_TOKEN script property not set");
+  const token = getHospitableToken();
 
   const target = parseInt(pid, 10); // numeric match → tolerant of "001" vs "1" vs "04"
   if (isNaN(target)) throw new Error("Invalid PID: " + pid);

@@ -6,17 +6,53 @@ import requests
 app = Flask(__name__)
 
 # === CONFIGURATION ===
-APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbwny6q4IojBMlyNtjfsn4t7TQ0QRysEQBXLacmHPZk-_PQJ1b3jdnDyiMP0_ZAJADZ_SQ/exec"
+APPS_SCRIPT_BASE_URL = "https://script.google.com/macros/s/AKfycbwW9uG4hKSfrUMoAF6zT9khK44EQ3F7hKf0WlBTBB-sWuuGNVCni1bKoij59lb6R1jaiw/exec"
+
+def lookup_reservation(code):
+    """Ask the Apps Script deployment to resolve a Hospitable reservation code.
+
+    Returns (prefill_dict, note). A failed lookup returns an empty dict and a
+    human-readable note rather than raising: the form must still render so the
+    guest can fill it in by hand.
+    """
+    code = (code or "").strip()
+    if not code:
+        return {}, ""
+
+    try:
+        res = requests.get(APPS_SCRIPT_BASE_URL, params={"code": code}, timeout=30)
+        data = res.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        return {}, f"Could not look up reservation {code} ({e}). Please fill the form in manually."
+
+    if data.get("error"):
+        return {}, f"Reservation {code}: {data['error']}. Please fill the form in manually."
+
+    return data, ""
+
 
 # === ROUTES ===
 @app.route("/", methods=["GET"])
 def form_page():
     building = request.args.get("form", "Coproperty")  # Default to "Liv" if not provided
 
-    # If the URL's form value starts with a number (the property's leading PID,
-    # e.g. "129-R36-A-..."), lock the PID field to those 3 digits so it can't be changed.
+    # ?code=<Hospitable reservation code> prefills the dates and PID from the
+    # booking. The lookup is done by the Apps Script deployment rather than here,
+    # so the Hospitable token only ever lives in one place.
+    prefill, prefill_note = lookup_reservation(request.args.get("code"))
+
+    # A PID from the reservation is authoritative, so it locks the field the same
+    # way a numeric ?form= does — and takes precedence over it.
     pid_match = re.match(r"\s*(\d{1,3})", building)
-    if pid_match:
+    if prefill.get("pid"):
+        locked_pid = prefill["pid"]
+        pid_field = (
+            f'<input type="text" name="pid" value="{locked_pid}" readonly '
+            f'pattern="\\d{{3}}" maxlength="3" inputmode="numeric" '
+            f'title="Locked to this reservation" />'
+        )
+        pid_hint = f"Locked to property {locked_pid} (from reservation {prefill.get('code', '')})."
+    elif pid_match:
         locked_pid = pid_match.group(1).zfill(3)
         pid_field = (
             f'<input type="text" name="pid" value="{locked_pid}" readonly '
@@ -32,6 +68,20 @@ def form_page():
         )
         pid_hint = "Maps to the first 3 digits of the Hospitable property number."
 
+    # Dates come back as YYYY-MM-DD, which is exactly what <input type="date"> wants.
+    checkin_value = prefill.get("checkinDate", "")
+    checkout_value = prefill.get("checkoutDate", "")
+
+    if prefill_note:
+        banner = f'<div class="banner warn">⚠️ {prefill_note}</div>'
+    elif prefill:
+        banner = (
+            f'<div class="banner ok">Prefilled from reservation '
+            f'<strong>{prefill.get("code", "")}</strong> — {prefill.get("propertyName", "")}</div>'
+        )
+    else:
+        banner = ""
+
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -39,6 +89,11 @@ def form_page():
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>Guest Check-In Form</title>
+      <!-- Dancing Script is the font Code.gs writes the signature in, so the
+           preview below matches what actually lands on the PDF. -->
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+      <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;600&display=swap" rel="stylesheet" />
       <style>
         body {{ font-family: Arial, sans-serif; background: #f3f4f6; padding: 2rem; }}
         form {{ background: white; padding: 2rem; border-radius: 12px; max-width: 420px; margin: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
@@ -47,10 +102,28 @@ def form_page():
         button:hover {{ background: #1e3a8a; }}
         small {{ color: #666; display: block; margin-top: -0.5rem; margin-bottom: 1rem; }}
         input[readonly] {{ background: #e9ecef; color: #555; cursor: not-allowed; }}
+        .banner {{ max-width: 420px; margin: 0 auto 1rem; padding: 0.6rem 0.8rem; border-radius: 8px; font-size: 0.9rem; }}
+        .banner.ok {{ background: #e7f2ff; color: #1e3a8a; }}
+        .banner.warn {{ background: #fff4e5; color: #8a5300; }}
+        .esign {{ border-top: 1px solid #e5e7eb; margin-top: 1.5rem; padding-top: 1.25rem; }}
+        .esign p {{ color: #374151; font-size: 0.92rem; line-height: 1.45; margin: 0 0 0.75rem; }}
+        .esign ul {{ color: #374151; font-size: 0.92rem; line-height: 1.5; margin: 0 0 1.25rem; padding-left: 1.25rem; }}
+        .esign li {{ margin-bottom: 0.35rem; }}
+        .esign-label {{ color: #6b7280; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }}
+        /* cursive is the fallback if Google Fonts is blocked, so the preview
+           still reads as a signature rather than as body text. */
+        .esign-preview {{
+          font-family: "Dancing Script", cursive;
+          font-size: 2rem; line-height: 1.4; color: #111827; min-height: 2.8rem;
+          border-bottom: 1px solid #9ca3af; margin: 0.25rem 0 1rem; padding: 0 0.25rem 0.35rem;
+          overflow-wrap: anywhere;
+        }}
+        .esign-preview.empty {{ color: #9ca3af; font-family: Arial, sans-serif; font-size: 0.9rem; }}
       </style>
     </head>
     <body>
       <h2 style="text-align:center;">Guest Check-In Form</h2>
+      {banner}
       <form id="checkin-form" enctype="multipart/form-data">
         <input type="text" name="fullname" placeholder="Full Name" required />
         <input type="email" name="email" placeholder="Email Address" required />
@@ -62,14 +135,21 @@ def form_page():
         <small>{pid_hint}</small>
 
         <label>Check-In Date</label>
-        <input type="date" name="checkinDate" required />
+        <input type="date" name="checkinDate" value="{checkin_value}" required />
 
-        <label>Checkout Date <span style="font-weight:normal;">(only if your stay is over 30 days)</span></label>
-        <input type="date" name="checkoutDate" placeholder="Checkout Date" />
-        <small>Only required for stays longer than one month.</small>
+        <label>Checkout Date</label>
+        <input type="date" name="checkoutDate" value="{checkout_value}" />
+        <small>Stays shorter than 28 days are written up as a one-month lease.</small>
 
         <label>Upload Passport Image</label>
         <input type="file" name="image" accept="image/*" required />
+
+        <div class="esign">
+          <p>Since we do not collect signatures, your name will be used as esignature
+             of confirmation that you agree to building rules and airbnb rules of conduct.</p>
+          <span class="esign-label">Your e-signature</span>
+          <div id="esign-preview" class="esign-preview empty" aria-live="polite">Type your full name above</div>
+        </div>
 
         <button type="submit">Submit</button>
       </form>
@@ -80,6 +160,18 @@ def form_page():
         const form = document.getElementById("checkin-form");
         const msg = document.getElementById("message");
         const building = "{building}";
+
+        // Live e-signature preview. Uses textContent rather than innerHTML so a
+        // name containing < or & renders literally instead of as markup.
+        const nameInput = form.querySelector('input[name="fullname"]');
+        const esign = document.getElementById("esign-preview");
+        function renderSignature() {{
+          const name = nameInput.value.trim();
+          esign.textContent = name || "Type your full name above";
+          esign.classList.toggle("empty", !name);
+        }}
+        nameInput.addEventListener("input", renderSignature);
+        renderSignature();
 
         // Downscale + JPEG-compress an image file in the browser so the base64
         // payload stays well under Vercel's 4.5 MB serverless request limit.
