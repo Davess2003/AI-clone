@@ -51,7 +51,7 @@ def form_page():
             f'pattern="\\d{{3}}" maxlength="3" inputmode="numeric" '
             f'title="Locked to this reservation" />'
         )
-        pid_hint = f"Locked to property {locked_pid} (from reservation {prefill.get('code', '')})."
+        pid_hint = "Generated code from reservation (DO NOT change)"
     elif pid_match:
         locked_pid = pid_match.group(1).zfill(3)
         pid_field = (
