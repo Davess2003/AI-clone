@@ -82,9 +82,26 @@ function doPost(e) {
     // Keys are the 3-digit PID as a QUOTED STRING. The quotes matter: a bare 061
     // is an octal literal in JS and would silently become 49, so the form would
     // never generate. Always "061", never 061.
+    // Properties whose own document REPLACES the shared rental contract, rather
+    // than being attached alongside it the way PID_ONLY_TEMPLATES is. The
+    // override carries the passport photo and the signature exactly as the
+    // contract would, so it is a straight swap. A PID listed here should not also
+    // appear in PID_ONLY_TEMPLATES, or its form would be attached twice.
+    //
+    // Note 061 and 170 are different buildings that both read as "Circle" —
+    // Circle Condominium here, The Circle Living Prototype below. Don't merge them.
+    const PID_TEMPLATE_OVERRIDES = {
+      // Circle Condominium uses its own contract in place of the shared one. The
+      // Residential Register below is still attached alongside it, so 061 sends
+      // two documents exactly as it did before.
+      // Doc "Circle template": same clauses as the shared contract with the
+      // unit's address written in, and tagged {GUEST_FULL_NAME} {PASSPORT_ID}
+      // {CHECKIN_DATE} {CHECKOUT_DATE} {SIGNATURE} — all of which pidFields
+      // below supplies.
+      "061": { templateId: "1D0qaXjEi0iTibvaeRaOaAfT21vZl3sVI0PAI2HfpQLY", docName: "Rental Contract" }
+    };
+
     const PID_ONLY_TEMPLATES = {
-      // 061 and 170 are different buildings that both read as "Circle" —
-      // Circle Condominium here, The Circle Living Prototype below. Don't merge them.
       "061": [ // Circle Condominium
         { templateId: "1aZp5ogm0Xf8s4nrxH35fRHG_Zpw89Lo1ic2l3ciBv8g", docName: "Residential Register" }
       ],
@@ -212,13 +229,24 @@ function doPost(e) {
       "TOTAL": numGuests
     });
 
+    // === MAIN DOCUMENT ===
+    // The shared rental contract, unless this PID overrides it with its own form.
+    // Either way it is the document that carries the passport photo.
+    const override = PID_TEMPLATE_OVERRIDES[pid];
     const attachments = [
-      buildDocFromTemplate(templateId, `CheckIn - ${formType} - ${fullname}`, {
-        fields: fields,
-        imageDataUrl: imageDataUrl,
-        signatureName: fullname,
-        signatureFont: SIGNATURE_FONT
-      })
+      override
+        ? buildDocFromTemplate(override.templateId, `${override.docName} - ${fullname}`, {
+            fields: pidFields,
+            imageDataUrl: imageDataUrl,
+            signatureName: fullname,
+            signatureFont: SIGNATURE_FONT
+          })
+        : buildDocFromTemplate(templateId, `CheckIn - ${formType} - ${fullname}`, {
+            fields: fields,
+            imageDataUrl: imageDataUrl,
+            signatureName: fullname,
+            signatureFont: SIGNATURE_FONT
+          })
     ];
 
     // === PID-SPECIFIC EXTRA FORMS ===
@@ -291,6 +319,9 @@ ${POA_FOLDER_URL}
 Best regards,
 Dave`;
 
+    // The office address is the only recipient. The guest's own email is
+    // collected for the paperwork ({EMAIL} in the contract), not to mail them a
+    // copy of their own passport photo.
     MailApp.sendEmail({
       to: "coproperty.info@gmail.com",
       subject: `Check-In Confirmation for ${formType} - ${fullname}`,
@@ -351,6 +382,10 @@ function assertTemplateIsGoogleDoc(templateId) {
  * Copies a template doc, fills its {PLACEHOLDER} tags, optionally appends the
  * uploaded image, and returns the result as a PDF blob.
  *
+ * The copy is only ever a staging area for the PDF, so it is deleted on the way
+ * out — otherwise every submission leaves another filled-in document behind in
+ * Drive. The emailed attachment is the only deliverable; nothing is kept.
+ *
  * @param {string} templateId  Doc ID of the template to copy
  * @param {string} docName     Name for the generated copy
  * @param {{fields: Object, imageDataUrl: (string|undefined),
@@ -404,7 +439,47 @@ function buildDocFromTemplate(templateId, docName, opts) {
   }
 
   doc.saveAndClose();
-  return DriveApp.getFileById(copy.getId()).getAs("application/pdf");
+  const pdf = DriveApp.getFileById(copy.getId()).getAs("application/pdf");
+  pdf.getBytes();               // force the export before the source doc goes away
+  pdf.setName(docName + ".pdf");
+
+  deleteFilePermanently(copy.getId());
+
+  return pdf;
+}
+
+/**
+ * Removes a generated copy from Drive for good.
+ *
+ * DriveApp can only trash, which leaves a filled-in contract — guest name,
+ * passport number and passport photo — sitting in the bin for 30 days. The
+ * Drive REST call is a real delete; it needs no advanced service, just the
+ * drive scope the manifest already requests.
+ *
+ * Cleanup must never cost the submission: by the time this runs the PDF is
+ * already in hand, so a failed delete falls back to trashing and then to a log.
+ *
+ * @param {string} fileId
+ */
+function deleteFilePermanently(fileId) {
+  try {
+    const res = UrlFetchApp.fetch("https://www.googleapis.com/drive/v3/files/" + fileId, {
+      method: "delete",
+      headers: { "Authorization": "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+
+    const code = res.getResponseCode();
+    if (code === 200 || code === 204 || code === 404) return; // 404 = already gone
+    throw new Error("Drive API " + code + ": " + res.getContentText().slice(0, 200));
+  } catch (deleteErr) {
+    Logger.log("Permanent delete failed for " + fileId + " (" + deleteErr.message + "); trashing instead.");
+    try {
+      DriveApp.getFileById(fileId).setTrashed(true);
+    } catch (trashErr) {
+      Logger.log("Could not trash temp doc " + fileId + ": " + trashErr.message);
+    }
+  }
 }
 
 /**

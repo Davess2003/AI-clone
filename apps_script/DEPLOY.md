@@ -113,6 +113,7 @@ deployment with a *new* URL, which silently breaks `api/app.py`.
 | What | Doc ID | Owner |
 |---|---|---|
 | Rental contract (all PIDs) | `1QDzhQncskMkAkcIJq_tOraW2EU5HOP6zgOrr11YUhKs` | coproperty.info@gmail.com |
+| "Circle template" (PID 061) — **replaces** the shared contract | `1D0qaXjEi0iTibvaeRaOaAfT21vZl3sVI0PAI2HfpQLY` | coproperty.info@gmail.com |
 | Residential Register (PID 061 / Circle Condominium) | `1aZp5ogm0Xf8s4nrxH35fRHG_Zpw89Lo1ic2l3ciBv8g` | coproperty.info@gmail.com |
 | House Rules Acknowledgement (PID 170) | `1tiQ2JcKhb2Vpn1b7YUFAT6FU8X70ig-CgII3fIDsYto` | coproperty.info@gmail.com |
 | Register Form (PID 170) | `1IheOxItkQ7kdD3cTPLPNXgtMn-CPrW-S3xz6d_IXr8E` | coproperty.info@gmail.com |
@@ -167,3 +168,15 @@ the fields are text.
 The account that owns the script must be able to **copy** every template above,
 since `buildDocFromTemplate` calls `DriveApp.getFileById(...).makeCopy(...)`.
 View access is enough; no access fails the whole submission.
+
+### Nothing is kept in Drive
+
+The copy exists only long enough to export a PDF, then
+`deleteFilePermanently()` removes it — a real Drive REST `DELETE`, not
+`setTrashed()`, so a filled-in contract carrying a guest's passport number and
+passport photo doesn't sit in the bin for 30 days. It uses
+`ScriptApp.getOAuthToken()` against the `drive` scope the manifest already
+requests, so there is no advanced service to enable. If the delete fails it
+falls back to trashing and logs why; either way the emailed PDF is already in
+hand, so cleanup can never cost a submission. The email to
+coproperty.info@gmail.com is the only copy of the paperwork that survives.
